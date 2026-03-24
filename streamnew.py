@@ -5,8 +5,8 @@ import os
 import pandas as pd
 
 # Backend API URLs
-VIDEO_API_URL = "http://103.22.140.216:5007/predict/video"
-IMAGE_API_URL = "http://103.22.140.216:5007/predict/image"
+VIDEO_API_URL = "http://103.22.140.216:5008/predict/video"
+IMAGE_API_URL = "http://103.22.140.216:5008/predict/image"
 
 st.set_page_config(page_title="Deepfake Detection System", layout="wide")
 
