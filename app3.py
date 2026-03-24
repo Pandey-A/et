@@ -12,7 +12,10 @@ from functools import lru_cache
 import tempfile
 import pandas as pd
 import librosa
-from moviepy.editor import VideoFileClip
+try:
+    from moviepy.editor import VideoFileClip
+except ImportError:
+    from moviepy import VideoFileClip
 from sklearn.preprocessing import MinMaxScaler
 
 # === Configure logging ===
