@@ -19,9 +19,10 @@ COPY . .
 # Flask environment variables
 ENV FLASK_APP=app3.py
 ENV FLASK_RUN_HOST=0.0.0.0
+ENV FLASK_RUN_PORT=5007
 
-# Expose port 5000
-EXPOSE 5050
+# Expose port 5007
+EXPOSE 5007
 
 # Run Flask
 CMD ["flask", "run"]
