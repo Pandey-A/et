@@ -7,6 +7,7 @@ import random
 import numpy as np
 import cv2
 import tensorflow as tf
+from tensorflow import keras
 import logging
 from functools import lru_cache
 import tempfile
