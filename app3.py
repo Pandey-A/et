@@ -303,7 +303,7 @@ def analyze_audio_segments(video_path):
         # Extract audio using moviepy
         video_clip = VideoFileClip(video_path)
         wav_path = video_path.rsplit('.', 1)[0] + '.wav'
-        video_clip.audio.write_audiofile(wav_path, codec='pcm_s16le', verbose=False, logger=None)
+        video_clip.audio.write_audiofile(wav_path, codec='pcm_s16le')
         video_clip.close()
 
         y, sr = librosa.load(wav_path, sr=SAMPLE_RATE, mono=True)
