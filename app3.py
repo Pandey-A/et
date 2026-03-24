@@ -364,7 +364,7 @@ def analyze_audio_segments(video_path):
         predictions.append({
             "segment": segment_label,
             "prediction": "Real" if is_real else "Fake",
-            "confidence": round((pred if is_real else 1 - pred) * 100, 1),
+            "confidence": float(round((pred if is_real else 1 - pred) * 100, 1)),
             "raw_score": float(pred)
         })
 
