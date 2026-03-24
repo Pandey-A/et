@@ -148,7 +148,7 @@ if option == "Video":
 
                             # Video segments table
                             if video_segments:
-                                df_video = pd.DataFrame(video_segments)
+                                df_video = pd.DataFrame(video_segments)[["time_range", "lips_manipulation", "face_manipulation"]]
                                 df_video.columns = ["Time Range (s)", "Lips Manipulation (%)", "Face Manipulation (%)"]
                                 st.dataframe(
                                     df_video.style.set_properties(**{
