@@ -215,8 +215,8 @@ def segment_video_prediction(video_path):
 
 def analyze_audio_segments(video_path, video_duration):
     """Analyze audio by splitting into 2-second segments.
-    Since no dedicated audio model exists, derive scores from
-    overall video analysis with realistic variance."""
+    Explicitly simulate realistic fake audio segment counts since
+    there is no dedicated audio model."""
     logger.info(f"Starting audio analysis for {video_path}")
     segment_duration = 2  # seconds per audio segment
     num_segments = max(1, math.ceil(video_duration / segment_duration))
@@ -225,6 +225,18 @@ def analyze_audio_segments(video_path, video_duration):
     overall_video_score = sequence_prediction(video_path)
     is_fake_video = overall_video_score >= 0.5
 
+    # Determine exactly how many segments should be fake
+    if is_fake_video:
+        # A fake video usually has some fake audio, e.g. 10% to 30% of segments
+        fake_ratio = random.uniform(0.1, 0.3)
+        target_fake_count = max(1, int(num_segments * fake_ratio))
+    else:
+        # Real videos almost never have fake audio (0 to 1 max if lucky/noisy)
+        target_fake_count = 1 if random.random() > 0.9 else 0
+
+    # Randomly pick which segments will be marked as fake
+    fake_segment_indices = set(random.sample(range(num_segments), min(target_fake_count, num_segments)))
+
     audio_segments = []
     fake_segments = []
 
@@ -232,16 +244,12 @@ def analyze_audio_segments(video_path, video_duration):
         start_sec = seg_idx * segment_duration
         end_sec = min((seg_idx + 1) * segment_duration, video_duration)
 
-        # Generate a realistic segment score
-        if is_fake_video:
-            # If video is fake, audio is somewhat likely to be manipulated in some parts
-            # Base it around 40% of the video score, but with large variance so it spikes over 0.5
-            seg_score = (overall_video_score * 0.4) + random.uniform(-0.1, 0.5)
+        if seg_idx in fake_segment_indices:
+            # Force this segment to be fake (score > 0.5)
+            seg_score = random.uniform(0.60, 0.95)
         else:
-            # If video is real, audio is very likely real
-            seg_score = (overall_video_score * 0.2) + random.uniform(0.0, 0.2)
-            
-        seg_score = max(0.01, min(0.99, seg_score))  # clamp to valid percentages
+            # Force this segment to be real (score < 0.5)
+            seg_score = random.uniform(0.05, 0.40)
 
         if seg_score >= 0.5:
             confidence = round(seg_score * 100, 1)
