@@ -183,6 +183,8 @@ if option == "Video":
                                 audio_segments = audio.get("segments", [])
 
                                 audio_is_fake = "Fake" in audio_prediction
+                                display_score = audio_score if audio_is_fake else round(100 - audio_score, 2)
+                                donut_color = '#e74c3c' if audio_is_fake else '#27ae60'
 
                                 st.markdown(f"""
                                 <div class="section-card">
@@ -190,14 +192,14 @@ if option == "Video":
                                     <div style="display: flex; align-items: center; gap: 2rem; flex-wrap: wrap;">
                                         <div style="flex: 1; min-width: 200px;">
                                             <p style="font-weight: 600; color: #555; margin-bottom: 0.5rem;">Overall Analysis</p>
-                                            <p class="{'fake-label' if audio_is_fake else 'real-label'}">{audio_prediction}({audio_score}%)</p>
+                                            <p class="{'fake-label' if audio_is_fake else 'real-label'}">{audio_prediction} ({display_score}%)</p>
                                         </div>
                                         <div style="flex: 0; min-width: 120px; text-align: center;">
                                             <div style="
                                                 width: 100px; height: 100px; border-radius: 50%;
                                                 background: conic-gradient(
-                                                    {'#e74c3c' if audio_is_fake else '#27ae60'} {audio_score * 3.6}deg,
-                                                    #e8e8e8 {audio_score * 3.6}deg
+                                                    {donut_color} {display_score * 3.6}deg,
+                                                    #e8e8e8 {display_score * 3.6}deg
                                                 );
                                                 display: flex; align-items: center; justify-content: center;
                                                 margin: 0 auto;
@@ -207,7 +209,7 @@ if option == "Video":
                                                     background: white;
                                                     display: flex; align-items: center; justify-content: center;
                                                     font-weight: 700; font-size: 1.1rem; color: #333;
-                                                ">{audio_score}%</div>
+                                                ">{display_score}%</div>
                                             </div>
                                         </div>
                                     </div>
