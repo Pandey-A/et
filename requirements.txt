@@ -1,0 +1,10 @@
+Flask
+Flask-Cors
+numpy
+opencv-python
+tensorflow
+pandas
+matplotlib
+imageio
+streamlit
+requests
