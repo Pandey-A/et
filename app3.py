@@ -223,7 +223,7 @@ def segment_video_prediction(video_path):
     }
 
 def initialize_models():
-    global feature_extractor, video_model, image_model
+    global feature_extractor, video_model, image_model, audio_model
     logger.info("Initializing models...")
     if not os.path.exists(VIDEO_MODEL_PATH):
         logger.error(f"Video model file not found: {VIDEO_MODEL_PATH}")
@@ -235,6 +235,15 @@ def initialize_models():
     video_model = build_video_model(MAX_SEQ_LENGTH, NUM_FEATURES)
     video_model.load_weights(VIDEO_MODEL_PATH)
     image_model = keras.models.load_model(IMAGE_MODEL_PATH)
+    
+    logger.info("Loading audio model...")
+    try:
+        audio_model = tf.keras.models.load_model('model.keras')
+        logger.info("Audio model loaded successfully")
+    except Exception as e:
+        audio_model = None
+        logger.warning(f"Could not load audio model (model.keras missing?): {e}")
+
     logger.info("All models loaded successfully")
 
 # === Image prediction logic ===
