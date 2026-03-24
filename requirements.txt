@@ -8,3 +8,6 @@ matplotlib
 imageio
 streamlit
 requests
+librosa
+moviepy
+scikit-learn

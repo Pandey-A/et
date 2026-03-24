@@ -5,8 +5,8 @@ import os
 import pandas as pd
 
 # Backend API URLs
-VIDEO_API_URL = "http://103.22.140.216:5008/predict/video"
-IMAGE_API_URL = "http://103.22.140.216:5008/predict/image"
+VIDEO_API_URL = "http://localhost:5007/predict/video"
+IMAGE_API_URL = "http://localhost:5007/predict/image"
 
 st.set_page_config(page_title="Deepfake Detection System", layout="wide")
 
@@ -227,10 +227,11 @@ if option == "Video":
                                 # Audio segment details table
                                 if audio_segments:
                                     st.markdown("**Segment Details**")
-                                    df_audio = pd.DataFrame(audio_segments)
-                                    df_audio.columns = ["Segment", "Prediction", "Confidence"]
-                                    # Format confidence with % sign
-                                    df_audio["Confidence"] = df_audio["Confidence"].apply(lambda x: f"{x}%")
+                                    # Create dataframe mapping from raw array
+                                    df_audio = pd.DataFrame([
+                                        {"Segment": s["segment"], "Prediction": s["prediction"], "Confidence": f'{s["confidence"]}%'}
+                                        for s in audio_segments
+                                    ])
 
                                     st.dataframe(
                                         df_audio.style.applymap(

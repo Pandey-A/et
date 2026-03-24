@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 import os
@@ -6,10 +6,14 @@ import math
 import random
 import numpy as np
 import cv2
-from tensorflow import keras
 import tensorflow as tf
 import logging
 from functools import lru_cache
+import tempfile
+import pandas as pd
+import librosa
+from moviepy.editor import VideoFileClip
+from sklearn.preprocessing import MinMaxScaler
 
 # === Configure logging ===
 logging.basicConfig(level=logging.INFO)
@@ -36,6 +40,7 @@ app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
 feature_extractor = None
 video_model = None
 image_model = None
+audio_model = None
 
 # === Utility functions ===
 
@@ -72,17 +77,17 @@ def load_video(path, max_frames=0, resize=(IMG_SIZE, IMG_SIZE)):
 @lru_cache(maxsize=1)
 def build_feature_extractor():
     logger.info("Building feature extractor...")
-    feature_extractor = keras.applications.InceptionV3(
+    feature_extractor = tf.keras.applications.InceptionV3(
         weights="imagenet",
         include_top=False,
         pooling="avg",
         input_shape=(IMG_SIZE, IMG_SIZE, 3),
     )
-    preprocess_input = keras.applications.inception_v3.preprocess_input
-    inputs = keras.Input((IMG_SIZE, IMG_SIZE, 3))
+    preprocess_input = tf.keras.applications.inception_v3.preprocess_input
+    inputs = tf.keras.Input((IMG_SIZE, IMG_SIZE, 3))
     preprocessed = preprocess_input(inputs)
     outputs = feature_extractor(preprocessed)
-    model = keras.Model(inputs, outputs, name="feature_extractor")
+    model = tf.keras.Model(inputs, outputs, name="feature_extractor")
     logger.info("Feature extractor built")
     return model
 
@@ -213,69 +218,6 @@ def segment_video_prediction(video_path):
         "video_segments": video_segments
     }
 
-def analyze_audio_segments(video_path, video_duration):
-    """Analyze audio by splitting into 2-second segments.
-    Explicitly simulate realistic fake audio segment counts since
-    there is no dedicated audio model."""
-    logger.info(f"Starting audio analysis for {video_path}")
-    segment_duration = 2  # seconds per audio segment
-    num_segments = max(1, math.ceil(video_duration / segment_duration))
-
-    # Get a base score from the overall video prediction
-    overall_video_score = sequence_prediction(video_path)
-    is_fake_video = overall_video_score >= 0.5
-
-    # Determine exactly how many segments should be fake
-    if is_fake_video:
-        # A fake video usually has some fake audio, e.g. 10% to 30% of segments
-        fake_ratio = random.uniform(0.1, 0.3)
-        target_fake_count = max(1, int(num_segments * fake_ratio))
-    else:
-        # Real videos almost never have fake audio (0 to 1 max if lucky/noisy)
-        target_fake_count = 1 if random.random() > 0.9 else 0
-
-    # Randomly pick which segments will be marked as fake
-    fake_segment_indices = set(random.sample(range(num_segments), min(target_fake_count, num_segments)))
-
-    audio_segments = []
-    fake_segments = []
-
-    for seg_idx in range(num_segments):
-        start_sec = seg_idx * segment_duration
-        end_sec = min((seg_idx + 1) * segment_duration, video_duration)
-
-        if seg_idx in fake_segment_indices:
-            # Force this segment to be fake (score > 0.5)
-            seg_score = random.uniform(0.60, 0.95)
-        else:
-            # Force this segment to be real (score < 0.5)
-            seg_score = random.uniform(0.05, 0.40)
-
-        if seg_score >= 0.5:
-            confidence = round(seg_score * 100, 1)
-            segment_label = f"{int(start_sec)}-{int(end_sec)}"
-            fake_segments.append({
-                "segment": segment_label,
-                "prediction": "Fake",
-                "confidence": confidence
-            })
-
-        audio_segments.append(seg_score)
-
-    # Overall audio score is based on fake segment proportion
-    fake_count = len(fake_segments)
-    total_count = num_segments
-    audio_fake_pct = round((fake_count / total_count) * 100, 2) if total_count > 0 else 0.0
-    audio_prediction = "Fake Audio" if audio_fake_pct > 0 else "Real Audio"
-
-    return {
-        "prediction": audio_prediction,
-        "overall_score": audio_fake_pct,
-        "total_segments": total_count,
-        "fake_segments_count": fake_count,
-        "segments": fake_segments
-    }
-
 def initialize_models():
     global feature_extractor, video_model, image_model
     logger.info("Initializing models...")
@@ -322,6 +264,110 @@ def health_check():
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500
 
+def prepare_data(X, window_size=5):
+    data = []
+    for i in range(len(X)):
+        row = X.iloc[i].values
+        row_data = []
+        for j in range(len(row) - window_size):
+            window = row[j:j + window_size]
+            row_data.append(window)
+        data.append(row_data)
+    return np.array(data)
+
+def analyze_audio_segments(video_path):
+    """Extracts audio, compiles features with librosa, and runs real AI detection using model.keras."""
+    if audio_model is None:
+        logger.warning("Audio model is missing, skipping audio analysis.")
+        return None
+
+    logger.info(f"Starting true audio analysis for {video_path}")
+    SAMPLE_RATE = 22050
+    SEGMENT_DURATION = 2
+    WINDOW_SIZE = 5
+
+    try:
+        # Extract audio using moviepy
+        video_clip = VideoFileClip(video_path)
+        wav_path = video_path.rsplit('.', 1)[0] + '.wav'
+        video_clip.audio.write_audiofile(wav_path, codec='pcm_s16le', verbose=False, logger=None)
+        video_clip.close()
+
+        y, sr = librosa.load(wav_path, sr=SAMPLE_RATE, mono=True)
+        os.remove(wav_path)
+    except Exception as e:
+        logger.error(f"Failed to extract/load audio: {e}")
+        return None
+
+    segment_length = int(SEGMENT_DURATION * sr)
+    all_segment_features = []
+    time_labels = []
+
+    for start in range(0, len(y), segment_length):
+        end = min(start + segment_length, len(y))
+        segment = y[start:end]
+        if len(segment) >= segment_length * 0.5:
+            features = {
+                'SPECTRAL_CENTROID': np.mean(librosa.feature.spectral_centroid(y=segment, sr=sr)[0]),
+                'SPECTRAL_BANDWIDTH': np.mean(librosa.feature.spectral_bandwidth(y=segment, sr=sr)[0]),
+                'SPECTRAL_ROLLOFF': np.mean(librosa.feature.spectral_rolloff(y=segment, sr=sr)[0]),
+                'ZCR': np.mean(librosa.feature.zero_crossing_rate(segment)[0]),
+                'RMS': np.mean(librosa.feature.rms(y=segment)[0])
+            }
+            mfccs = librosa.feature.mfcc(y=segment, sr=sr, n_mfcc=13)
+            for i, mfcc in enumerate(mfccs):
+                features[f'MFCC_{i+1}'] = np.mean(mfcc)
+            chroma = librosa.feature.chroma_stft(y=segment, sr=sr)
+            for i, chroma_band in enumerate(chroma):
+                features[f'CHROMA_{i+1}'] = np.mean(chroma_band)
+                
+            all_segment_features.append(features)
+            
+            start_sec = int(start / sr)
+            end_sec = int(end / sr)
+            time_labels.append(f"{start_sec}-{end_sec}")
+
+    if not all_segment_features:
+        logger.warning("No valid audio segments found.")
+        return None
+
+    features_df = pd.DataFrame(all_segment_features)
+    scaler = MinMaxScaler()
+    scaled_features = scaler.fit_transform(features_df)
+    features_df_scaled = pd.DataFrame(scaled_features, columns=features_df.columns)
+    
+    processed_data = prepare_data(features_df_scaled, window_size=WINDOW_SIZE)
+
+    predictions = []
+    raw_preds = []
+    
+    for i, segment_data in enumerate(processed_data):
+        segment_data = np.expand_dims(segment_data, axis=0)
+        pred = audio_model.predict(segment_data, verbose=0)[0][0]
+        raw_preds.append(pred)
+        
+        is_real = pred >= 0.5
+        segment_label = time_labels[i]
+        predictions.append({
+            "segment": segment_label,
+            "prediction": "Real" if is_real else "Fake",
+            "confidence": round((pred if is_real else 1 - pred) * 100, 1),
+            "raw_score": float(pred)
+        })
+
+    fake_count = sum(1 for p in predictions if p["prediction"] == "Fake")
+    total_count = len(predictions)
+    audio_fake_pct = round((fake_count / total_count) * 100, 2) if total_count > 0 else 0.0
+    audio_prediction = "Fake Audio" if audio_fake_pct > 0 else "Real Audio"
+
+    return {
+        "prediction": audio_prediction,
+        "overall_score": audio_fake_pct,
+        "total_segments": total_count,
+        "fake_segments_count": fake_count,
+        "segments": predictions
+    }
+
 @app.route('/predict/video', methods=['POST'])
 def predict_video():
     try:
@@ -348,21 +394,25 @@ def predict_video():
         # Run segment-level video analysis
         video_result = segment_video_prediction(file_path)
         
-        # Run audio analysis
-        audio_result = analyze_audio_segments(file_path, video_duration)
+        # Run true audio analysis
+        audio_result = analyze_audio_segments(file_path)
         
         os.remove(file_path)
         
-        return jsonify({
+        response_data = {
             "filename": filename,
             "prediction": video_result["prediction"],
             "overall_score": video_result["overall_score"],
             "fake_clips_detected": video_result["fake_clips_detected"],
             "avg_lips_manipulation": video_result["avg_lips_manipulation"],
             "avg_face_manipulation": video_result["avg_face_manipulation"],
-            "video_segments": video_result["video_segments"],
-            "audio_analysis": audio_result
-        })
+            "video_segments": video_result["video_segments"]
+        }
+        
+        if audio_result is not None:
+            response_data["audio_analysis"] = audio_result
+            
+        return jsonify(response_data)
     except Exception as e:
         logger.error(f"Error in video prediction: {e}")
         return jsonify({"error": str(e)}), 500
